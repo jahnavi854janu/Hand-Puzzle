@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LIVE PUZZLE</title>
+
+  <!-- MediaPipe Camera Utils + Hands -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <style>
+    /* ── Reset & Base ──────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0d0d0f;
+      --surface:  #16161a;
+      --border:   #25252d;
+      --gold:     #ffca28;
+      --gold-dim: rgba(255,202,40,0.15);
+      --text:     #ffffff;
+      --muted:    #777788;
+      --green:    #00e676;
+      --radius:   10px;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ────────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 28px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      gap: 20px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-icon {
+      font-size: 1.4rem;
+      line-height: 1;
+    }
+
+    .brand h1 {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      color: var(--gold);
+    }
+
+    .header-stats {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .stat-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 18px;
+      background: rgba(255,202,40,0.1);
+      border: 1px solid rgba(255,202,40,0.3);
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 0.92rem;
+      color: var(--gold);
+      letter-spacing: 0.04em;
+      min-width: 120px;
+    }
+
+    .stat-pill.swaps {
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(255,255,255,0.15);
+      color: #ccc;
+    }
+
+    #hand-status {
+      padding: 7px 16px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      background: rgba(100,100,120,0.2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      transition: all 0.3s;
+    }
+
+    #hand-status.live {
+      background: rgba(0,230,118,0.1);
+      border-color: rgba(0,230,118,0.3);
+      color: var(--green);
+    }
+
+    #hand-status.pinching {
+      background: rgba(255,202,40,0.12);
+      border-color: rgba(255,202,40,0.4);
+      color: var(--gold);
+    }
+
+    /* ── Game Container ────────────────────────────────── */
+    #game-container {
+      flex: 1;
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 24px;
+      min-height: 0;
+    }
+
+    video { display: none; }
+
+    #canvas-board {
+      display: block;
+      width: auto;
+      height: 100%;
+      max-height: 100%;
+      max-width: 100%;
+      aspect-ratio: 4/3;
+      background: #000;
+      border: 2px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 0 50px rgba(0,0,0,0.7), 0 0 30px rgba(255,202,40,0.08);
+      cursor: pointer;
+      transition: border-color 0.3s;
+    }
+
+    #canvas-board:hover { border-color: rgba(255,202,40,0.4); }
+
+    /* ── Cursor Ring ───────────────────────────────────── */
+    #cursor-ring {
+      position: absolute;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2.5px solid var(--gold);
+      box-shadow: 0 0 14px rgba(255,202,40,0.5);
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      display: none;
+      transition: width 0.1s, height 0.1s, border-color 0.15s;
+    }
+
+    #cursor-ring.pinching {
+      width: 18px;
+      height: 18px;
+      border-color: #ff4444;
+      box-shadow: 0 0 14px rgba(255,68,68,0.6);
+    }
+
+    /* ── Tile Selection Hint ───────────────────────────── */
+    #tile-hint {
+      position: absolute;
+      border: 2.5px solid var(--gold);
+      box-shadow: 0 0 14px rgba(255,202,40,0.4);
+      border-radius: 4px;
+      pointer-events: none;
+      display: none;
+    }
+
+    /* ── Completion Modal ──────────────────────────────── */
+    #complete-modal {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.85);
+      background: rgba(14, 14, 18, 0.97);
+      border: 2px solid var(--gold);
+      padding: 44px 52px;
+      border-radius: 20px;
+      text-align: center;
+      box-shadow: 0 0 60px rgba(255,202,40,0.35), 0 24px 80px rgba(0,0,0,0.8);
+      z-index: 10;
+      opacity: 0;
+      transition: all 0.4s cubic-bezier(0.34,1.56,0.64,1);
+      min-width: 320px;
+    }
+
+    #complete-modal.visible {
+      display: block;
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+
+    .modal-trophy { font-size: 3.8rem; margin-bottom: 12px; line-height: 1; display: block; }
+
+    #complete-modal h2 {
+      font-size: 2rem;
+      font-weight: 900;
+      letter-spacing: 0.12em;
+      color: var(--gold);
+      margin-bottom: 8px;
+    }
+
+    .modal-sub { font-size: 0.85rem; color: var(--muted); margin-bottom: 20px; }
+
+    .modal-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+
+    .mstat {
+      padding: 14px;
+      background: rgba(255,202,40,0.08);
+      border: 1px solid rgba(255,202,40,0.2);
+      border-radius: 10px;
+    }
+
+    .mstat-label { font-size: 0.68rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; }
+    .mstat-val   { font-size: 1.5rem; font-weight: 800; color: var(--gold); margin-top: 4px; }
+
+    .modal-btn {
+      display: inline-block;
+      padding: 13px 36px;
+      background: var(--gold);
+      border: none;
+      border-radius: 999px;
+      color: #0d0d0f;
+      font-size: 0.95rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      transition: all 0.2s;
+      width: 100%;
+    }
+
+    .modal-btn:hover { opacity: 0.9; transform: translateY(-2px); box-shadow: 0 8px 20px rgba(255,202,40,0.4); }
+
+    /* ── Footer ────────────────────────────────────────── */
+    footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 24px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+      font-size: 0.78rem;
+    }
+
+    footer button {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 0.78rem;
+      text-decoration: underline;
+      font-family: inherit;
+      padding: 4px 0;
+      transition: color 0.2s;
+    }
+
+    footer button:hover { color: var(--gold); }
+
+    footer .credit {
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+
+    /* ── Hand skeleton glow animation ─────────────────── */
+    @keyframes glow-pulse {
+      0%, 100% { box-shadow: 0 0 14px rgba(255,202,40,0.5); }
+      50%       { box-shadow: 0 0 28px rgba(255,202,40,0.9); }
+    }
+
+    #cursor-ring.live { animation: glow-pulse 1.2s infinite; }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────── -->
+<header>
+  <div class="brand">
+    <span class="brand-icon">🧩</span>
+    <h1>LIVE PUZZLE</h1>
+  </div>
+
+  <div class="header-stats">
+    <div class="stat-pill" id="timer-display">⏱ 0:00</div>
+    <div class="stat-pill swaps" id="swap-display">🔄 Swaps: 0</div>
+    <div id="hand-status">🔍 No Hand</div>
+  </div>
+</header>
+
+<!-- ── Game Stage ───────────────────────────────────────── -->
+<div id="game-container">
+  <video id="webcam" autoplay playsinline muted></video>
+  <canvas id="canvas-board" width="640" height="480"></canvas>
+
+  <!-- Virtual cursor ring (DOM overlay) -->
+  <div id="cursor-ring"></div>
+
+  <!-- Tile hover/selection highlight -->
+  <div id="tile-hint"></div>
+
+  <!-- Completion Modal -->
+  <div id="complete-modal">
+    <span class="modal-trophy">🏆</span>
+    <h2>COMPLETE!</h2>
+    <p class="modal-sub">You solved the puzzle with your hands!</p>
+    <div class="modal-stats">
+      <div class="mstat">
+        <div class="mstat-label">Time</div>
+        <div class="mstat-val" id="final-time">0:00</div>
+      </div>
+      <div class="mstat">
+        <div class="mstat-label">Swaps</div>
+        <div class="mstat-val" id="final-swaps">0</div>
+      </div>
+    </div>
+    <button class="modal-btn" onclick="resetPuzzle()">🔀 RESTART</button>
+  </div>
+</div>
+
+<!-- ── Footer ──────────────────────────────────────────── -->
+<footer>
+  <button onclick="resetPuzzle()">Reset layout &amp; positions</button>
+  <span class="credit">⚡ By Dominik Canvas</span>
+</footer>
+
+<script>
+/* ═══════════════════════════════════════════════════════════
+   LIVE PUZZLE  ·  MediaPipe Hands + Camera Utils
+   ═══════════════════════════════════════════════════════════ */
+
+const video         = document.getElementById('webcam');
+const canvas        = document.getElementById('canvas-board');
+const ctx           = canvas.getContext('2d');
+const completeModal = document.getElementById('complete-modal');
+const timerDisplay  = document.getElementById('timer-display');
+const swapDisplay   = document.getElementById('swap-display');
+const handStatus    = document.getElementById('hand-status');
+const cursorRing    = document.getElementById('cursor-ring');
+const tileHint      = document.getElementById('tile-hint');
+const gameContainer = document.getElementById('game-container');
+
+const GRID  = 3;
+const CONNS = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],
+  [13,17],[17,18],[18,19],[19,20],[0,17]
+];
+
+// ── State ─────────────────────────────────────────────────
+let tiles        = [];
+let selected     = null;
+let swapCount    = 0;
+let isSolved     = false;
+let startTime    = null;
+let timerElapsed = 0;
+let timerInterval= null;
+let landmarks    = null;
+
+// Pinch gesture state
+let pinchHoldFrames = 0;
+const PINCH_FRAMES = 16;
+
+// ── Tile Init & Scramble ──────────────────────────────────
+function initTiles() {
+  tiles = Array.from({ length: GRID * GRID }, (_, i) => i);
+  // Fisher-Yates shuffle
+  for (let i = tiles.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [tiles[i], tiles[j]] = [tiles[j], tiles[i]];
+  }
+}
+
+function resetPuzzle() {
+  initTiles();
+  selected    = null;
+  swapCount   = 0;
+  isSolved    = false;
+  startTime   = null;
+  timerElapsed= 0;
+  clearInterval(timerInterval);
+  timerInterval = null;
+  timerDisplay.textContent = '⏱ 0:00';
+  swapDisplay.textContent  = '🔄 Swaps: 0';
+  completeModal.classList.remove('visible');
+  setTimeout(() => { completeModal.style.display = 'none'; }, 400);
+  tileHint.style.display = 'none';
+}
+
+// ── Timer ─────────────────────────────────────────────────
+function startTimer() {
+  if (timerInterval) return;
+  startTime    = Date.now();
+  timerInterval = setInterval(() => {
+    timerElapsed = Math.floor((Date.now() - startTime) / 1000);
+    timerDisplay.textContent = '⏱ ' + formatTime(timerElapsed);
+  }, 500);
+}
+
+function formatTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
+}
+
+// ── Win Check ─────────────────────────────────────────────
+function checkSolved() {
+  if (isSolved) return;
+  if (tiles.every((v, i) => v === i)) {
+    isSolved = true;
+    clearInterval(timerInterval);
+    document.getElementById('final-time').textContent  = formatTime(timerElapsed);
+    document.getElementById('final-swaps').textContent = swapCount;
+    completeModal.style.display = 'block';
+    requestAnimationFrame(() => completeModal.classList.add('visible'));
+  }
+}
+
+// ── Tile Swap ─────────────────────────────────────────────
+function swapTiles(a, b) {
+  if (a === b || a < 0 || b < 0) return;
+  [tiles[a], tiles[b]] = [tiles[b], tiles[a]];
+  swapCount++;
+  swapDisplay.textContent = '🔄 Swaps: ' + swapCount;
+  checkSolved();
+  if (!timerInterval && !isSolved) startTimer();
+}
+
+function getTileAt(cx, cy) {
+  const tw = canvas.width  / GRID;
+  const th = canvas.height / GRID;
+  const col = Math.floor(cx / tw);
+  const row = Math.floor(cy / th);
+  if (col < 0 || col >= GRID || row < 0 || row >= GRID) return -1;
+  return row * GRID + col;
+}
+
+function getTileRect(idx) {
+  const tw = canvas.width  / GRID;
+  const th = canvas.height / GRID;
+  return { x: (idx % GRID) * tw, y: Math.floor(idx / GRID) * th, w: tw, h: th };
+}
+
+// ── Click / Touch Swap ────────────────────────────────────
+canvas.addEventListener('click', e => {
+  if (isSolved) return;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width  / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const cx = (e.clientX - rect.left) * scaleX;
+  const cy = (e.clientY - rect.top)  * scaleY;
+  const clicked = getTileAt(cx, cy);
+  if (clicked < 0) return;
+
+  if (selected === null) {
+    selected = clicked;
+    showHint(clicked);
+  } else {
+    swapTiles(selected, clicked);
+    selected = null;
+    tileHint.style.display = 'none';
+  }
+});
+
+function showHint(posIdx) {
+  const canvasRect = canvas.getBoundingClientRect();
+  const containerRect = gameContainer.getBoundingClientRect();
+  const t = getTileRect(posIdx);
+  const scaleX = canvasRect.width  / canvas.width;
+  const scaleY = canvasRect.height / canvas.height;
+  Object.assign(tileHint.style, {
+    display: 'block',
+    left:   (canvasRect.left - containerRect.left + t.x * scaleX) + 'px',
+    top:    (canvasRect.top  - containerRect.top  + t.y * scaleY) + 'px',
+    width:  (t.w * scaleX) + 'px',
+    height: (t.h * scaleY) + 'px',
+  });
+}
+
+// ── Render Loop ───────────────────────────────────────────
+function renderBoard() {
+  const W  = canvas.width;
+  const H  = canvas.height;
+  const tw = W / GRID;
+  const th = H / GRID;
+  const vw = video.videoWidth  || 640;
+  const vh = video.videoHeight || 480;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Draw scrambled video tiles
+  for (let pos = 0; pos < tiles.length; pos++) {
+    const srcId  = tiles[pos];
+    const srcCol = srcId  % GRID;
+    const srcRow = Math.floor(srcId  / GRID);
+    const dstCol = pos   % GRID;
+    const dstRow = Math.floor(pos   / GRID);
+
+    // Mirror webcam
+    ctx.save();
+    ctx.translate(dstCol * tw + tw, dstRow * th);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, srcCol * (vw/GRID), srcRow * (vh/GRID), vw/GRID, vh/GRID, 0, 0, tw, th);
+    ctx.restore();
+
+    // Tile border
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(dstCol * tw + 1, dstRow * th + 1, tw - 2, th - 2);
+
+    // Tile number badge
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.beginPath();
+    ctx.roundRect(dstCol * tw + 5, dstRow * th + 5, 22, 17, 4);
+    ctx.fill();
+    ctx.fillStyle = tiles[pos] === pos ? '#00e676' : '#ffca28';
+    ctx.font = 'bold 10px monospace';
+    ctx.fillText(srcId + 1, dstCol * tw + 9, dstRow * th + 17);
+
+    // Selected highlight
+    if (selected === pos) {
+      ctx.fillStyle  = 'rgba(255,202,40,0.15)';
+      ctx.fillRect(dstCol * tw, dstRow * th, tw, th);
+      ctx.strokeStyle = '#ffca28';
+      ctx.lineWidth   = 3;
+      ctx.strokeRect(dstCol * tw + 2, dstRow * th + 2, tw - 4, th - 4);
+    }
+
+    // Correct-placed shimmer
+    if (tiles[pos] === pos) {
+      ctx.strokeStyle = 'rgba(0,230,118,0.5)';
+      ctx.lineWidth   = 2;
+      ctx.strokeRect(dstCol * tw + 2, dstRow * th + 2, tw - 4, th - 4);
+    }
+  }
+
+  // Draw hand skeleton & keypoints
+  if (landmarks) {
+    // --- Skeleton connections (white wireframe) ---
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth   = 2;
+    CONNS.forEach(([a, b]) => {
+      const pa = landmarks[a], pb = landmarks[b];
+      ctx.beginPath();
+      ctx.moveTo((1 - pa.x) * W, pa.y * H);
+      ctx.lineTo((1 - pb.x) * W, pb.y * H);
+      ctx.stroke();
+    });
+
+    // --- Keypoint dots (yellow) ---
+    landmarks.forEach((pt, i) => {
+      const x = (1 - pt.x) * W;
+      const y = pt.y * H;
+      const isKey = i === 4 || i === 8; // thumb tip, index tip
+
+      ctx.beginPath();
+      ctx.arc(x, y, isKey ? 7 : 4, 0, Math.PI * 2);
+      ctx.fillStyle  = '#ffca28';
+      if (isKey) { ctx.shadowBlur = 14; ctx.shadowColor = '#ffca28'; }
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    });
+
+    // --- Thumb-index pinch line ---
+    const thumb = landmarks[4], index = landmarks[8];
+    const tx = (1 - thumb.x) * W, ty = thumb.y * H;
+    const ix = (1 - index.x) * W, iy = index.y * H;
+    const dist = Math.hypot(tx - ix, ty - iy);
+    ctx.strokeStyle = dist < W * 0.055 ? '#ff4444' : 'rgba(255,255,255,0.3)';
+    ctx.lineWidth   = dist < W * 0.055 ? 3 : 1.5;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(ix, iy); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // --- Bounding box ---
+    const xs = landmarks.map(p => (1 - p.x) * W);
+    const ys = landmarks.map(p => p.y * H);
+    const bx = Math.min(...xs) - 10, by = Math.min(...ys) - 10;
+    const bw = Math.max(...xs) - Math.min(...xs) + 20;
+    const bh = Math.max(...ys) - Math.min(...ys) + 20;
+    ctx.strokeStyle = 'rgba(255,202,40,0.4)';
+    ctx.lineWidth   = 1;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(bx, by, bw, bh);
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(255,202,40,0.8)';
+    ctx.font      = '600 10px Segoe UI, sans-serif';
+    ctx.fillText('HAND', bx + 4, by - 3);
+  }
+
+  requestAnimationFrame(renderBoard);
+}
+
+// ── Virtual Cursor (DOM overlay over canvas) ──────────────
+function updateCursorDOM(lm) {
+  if (!lm) {
+    cursorRing.style.display = 'none';
+    handStatus.className     = '';
+    handStatus.textContent   = '🔍 No Hand';
+    return;
+  }
+
+  const canvasRect    = canvas.getBoundingClientRect();
+  const containerRect = gameContainer.getBoundingClientRect();
+  const index         = lm[8];
+  const nx  = 1 - index.x;
+  const ny  = index.y;
+  const cx  = canvasRect.left - containerRect.left + nx * canvasRect.width;
+  const cy  = canvasRect.top  - containerRect.top  + ny * canvasRect.height;
+
+  cursorRing.style.left    = cx + 'px';
+  cursorRing.style.top     = cy + 'px';
+  cursorRing.style.display = 'block';
+
+  // Hover tile hint
+  const cx_canvas = nx * canvas.width;
+  const cy_canvas = ny * canvas.height;
+  const hoverPos  = getTileAt(cx_canvas, cy_canvas);
+  if (hoverPos >= 0 && selected === null) {
+    showHint(hoverPos);
+  }
+
+  // Pinch detection
+  const thumbPx  = { x: (1 - lm[4].x) * canvas.width,  y: lm[4].y * canvas.height };
+  const indexPx  = { x: (1 - lm[8].x) * canvas.width,  y: lm[8].y * canvas.height };
+  const pinchDist = Math.hypot(thumbPx.x - indexPx.x, thumbPx.y - indexPx.y);
+  const isPinch   = pinchDist < canvas.width * 0.055;
+
+  cursorRing.classList.toggle('pinching', isPinch);
+  cursorRing.classList.toggle('live', !isPinch);
+
+  if (isPinch) {
+    pinchHoldFrames++;
+    handStatus.className   = 'pinching';
+    handStatus.textContent = `🤏 Pinch ${pinchHoldFrames}/${PINCH_FRAMES}`;
+
+    if (pinchHoldFrames === PINCH_FRAMES && !isSolved) {
+      if (selected === null) {
+        if (hoverPos >= 0) {
+          selected = hoverPos;
+          showHint(hoverPos);
+          handStatus.textContent = '✅ Tile Grabbed!';
+        }
+      } else if (hoverPos >= 0 && hoverPos !== selected) {
+        swapTiles(selected, hoverPos);
+        selected = null;
+        tileHint.style.display = 'none';
+        handStatus.textContent = '🔄 Swapped!';
+        pinchHoldFrames = 0;
+      }
+    }
+  } else {
+    pinchHoldFrames = 0;
+    handStatus.className   = 'live';
+    handStatus.textContent = selected !== null ? '✋ Hand — aim & pinch target' : '✋ Hand Detected';
+  }
+}
+
+// ── MediaPipe Setup ───────────────────────────────────────
+const hands = new Hands({
+  locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+});
+
+hands.setOptions({
+  maxNumHands: 1,
+  modelComplexity: 1,
+  minDetectionConfidence: 0.6,
+  minTrackingConfidence: 0.6,
+});
+
+hands.onResults(results => {
+  landmarks = (results.multiHandLandmarks && results.multiHandLandmarks.length > 0)
+    ? results.multiHandLandmarks[0]
+    : null;
+  updateCursorDOM(landmarks);
+});
+
+// ── Camera Utils ──────────────────────────────────────────
+const camera = new Camera(video, {
+  onFrame: async () => {
+    await hands.send({ image: video });
+  },
+  width: 640,
+  height: 480
+});
+
+// ── Bootstrap ─────────────────────────────────────────────
+initTiles();
+camera.start().then(() => {
+  handStatus.textContent = '🔍 Waiting for Hand…';
+  renderBoard();
+}).catch(err => {
+  console.error('Camera start error:', err);
+  handStatus.textContent = '⚠️ Camera Blocked';
+  // Start render anyway (for click-only mode)
+  renderBoard();
+});
+</script>
+</body>
+</html>
