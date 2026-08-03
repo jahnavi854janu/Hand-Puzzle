@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>HandPuzzle</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700;800&display=swap" rel="stylesheet">
+<script async src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js"></script>
+<style>
+:root{
+  --bg:#080c14;--surf:#0f1722;--purple:#7c3aed;--cyan:#06b6d4;
+  --green:#10b981;--pink:#ec4899;--yellow:#facc15;--text:#f8fafc;--muted:#64748b;
+  --border:rgba(255,255,255,0.08);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Space Grotesk',system-ui,sans-serif;color:var(--text);touch-action:none;-webkit-tap-highlight-color:transparent;}
+#app{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:var(--bg);}
+#game{position:relative;width:100%;height:100%;max-width:430px;overflow:hidden;background:var(--surf);}
+.screen{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:28px 24px;opacity:0;pointer-events:none;transition:opacity 0.4s;}
+.screen.active{opacity:1;pointer-events:all;}
+
+/* START */
+#start-screen{
+  gap:18px;
+  background:radial-gradient(ellipse at 50% 25%,rgba(124,58,237,0.25) 0,transparent 65%),
+             radial-gradient(ellipse at 85% 85%,rgba(6,182,212,0.12) 0,transparent 55%),var(--bg);
+}
+.s-icon{font-size:4.5rem;line-height:1;filter:drop-shadow(0 0 24px rgba(124,58,237,0.7));animation:floatIcon 3s ease-in-out infinite;}
+@keyframes floatIcon{0%,100%{transform:translateY(0);}50%{transform:translateY(-10px);}}
+.s-title{font-size:2.6rem;font-weight:800;letter-spacing:-0.02em;text-align:center;
+  background:linear-gradient(135deg,#a78bfa,var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.s-sub{font-size:0.82rem;color:var(--muted);text-align:center;line-height:1.65;max-width:280px;}
+.steps-list{width:100%;max-width:330px;display:flex;flex-direction:column;gap:9px;}
+.step-row{display:flex;align-items:center;gap:12px;padding:11px 14px;
+  background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:12px;font-size:0.79rem;color:rgba(255,255,255,0.85);}
+.sn{width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,var(--purple),#4f46e5);
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.72rem;flex-shrink:0;}
+.btn-primary{padding:15px 40px;background:linear-gradient(135deg,var(--purple),#4f46e5);border:none;border-radius:999px;
+  color:#fff;font-family:inherit;font-size:0.98rem;font-weight:700;cursor:pointer;letter-spacing:0.02em;
+  box-shadow:0 0 30px rgba(124,58,237,0.45);transition:all 0.2s;}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 0 45px rgba(124,58,237,0.65);}
+.btn-primary:active{transform:scale(0.97);}
+.btn-ghost{padding:13px 30px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);border-radius:999px;
+  color:var(--text);font-family:inherit;font-size:0.88rem;font-weight:600;cursor:pointer;transition:all 0.2s;}
+.btn-ghost:hover{background:rgba(255,255,255,0.1);}
+
+/* CAPTURE */
+#capture-screen{padding:0;background:#000;}
+#cap-video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);}
+#hand-overlay{position:absolute;inset:0;pointer-events:none;}
+#cap-ui{position:absolute;inset:0;display:flex;flex-direction:column;pointer-events:none;}
+.cap-top{padding:18px 20px 40px;background:linear-gradient(to bottom,rgba(0,0,0,0.72) 0%,transparent 100%);text-align:center;}
+.cap-top h2{font-size:1rem;font-weight:700;letter-spacing:0.1em;color:#fff;}
+.cap-bot{margin-top:auto;padding:24px 20px 32px;background:linear-gradient(to top,rgba(0,0,0,0.82) 0%,transparent 100%);text-align:center;}
+#hand-prompt{font-size:0.88rem;color:rgba(255,255,255,0.75);margin-bottom:14px;}
+.h-dots{display:flex;justify-content:center;gap:24px;margin-bottom:10px;}
+.h-dot{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,255,255,0.3);background:transparent;transition:all 0.3s;}
+.h-dot.on{background:var(--green);border-color:var(--green);box-shadow:0 0 12px var(--green);}
+#det-status{font-size:0.72rem;color:var(--muted);}
+/* countdown */
+#cd-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  background:rgba(0,0,0,0.45);opacity:0;pointer-events:none;transition:opacity 0.3s;}
+#cd-overlay.show{opacity:1;}
+#cd-num{font-size:9rem;font-weight:800;color:#fff;text-shadow:0 0 50px rgba(124,58,237,0.9);
+  animation:cdPop 1s ease-out both;}
+@keyframes cdPop{0%{transform:scale(1.6);opacity:0;}25%{transform:scale(1);opacity:1;}85%{transform:scale(1);opacity:1;}100%{transform:scale(0.6);opacity:0;}}
+
+/* PUZZLE */
+#puzzle-screen{padding:0;background:var(--bg);}
+#puz-header{position:absolute;top:0;left:0;right:0;z-index:10;
+  display:flex;align-items:center;justify-content:space-between;padding:16px 20px;
+  background:linear-gradient(to bottom,rgba(8,12,20,0.95) 0%,transparent 100%);}
+#puz-header h2{font-size:0.82rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);}
+#puz-timer{font-size:1.05rem;font-weight:700;color:var(--cyan);font-variant-numeric:tabular-nums;}
+#grid-wrap{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);}
+.gslot{position:absolute;border:1px solid rgba(255,255,255,0.1);border-radius:7px;background:rgba(255,255,255,0.025);transition:border-color 0.25s,background 0.25s;}
+.gslot.hl{border-color:rgba(124,58,237,0.65);background:rgba(124,58,237,0.1);}
+.gslot.ok{border-color:rgba(16,185,129,0.55);background:rgba(16,185,129,0.08);}
+.tile{position:absolute;border-radius:7px;cursor:grab;
+  box-shadow:0 2px 14px rgba(0,0,0,0.6);border:2px solid rgba(255,255,255,0.12);
+  user-select:none;-webkit-user-select:none;background-clip:content-box;}
+.tile.drag{cursor:grabbing;z-index:100;transform:scale(1.09);
+  box-shadow:0 10px 36px rgba(124,58,237,0.55),0 0 0 2.5px rgba(167,139,250,0.9);
+  transition:box-shadow 0.15s,transform 0.15s;}
+.tile.locked{border-color:rgba(16,185,129,0.65);box-shadow:0 0 22px rgba(16,185,129,0.45);
+  pointer-events:none;animation:lockPop 0.45s cubic-bezier(0.34,1.56,0.64,1);}
+@keyframes lockPop{0%{transform:scale(1.18);}100%{transform:scale(1);}}
+.tile.sfl{transition:left 0.55s cubic-bezier(0.4,0,0.2,1),top 0.55s cubic-bezier(0.4,0,0.2,1);}
+/* hand cursor */
+#hcursor{position:absolute;width:32px;height:32px;border-radius:50%;border:2.5px solid var(--cyan);
+  box-shadow:0 0 16px rgba(6,182,212,0.6);pointer-events:none;transform:translate(-50%,-50%);
+  display:none;z-index:200;transition:width 0.1s,height 0.1s,border-color 0.15s,box-shadow 0.15s;}
+#hcursor.pinch{width:20px;height:20px;border-color:var(--purple);box-shadow:0 0 20px rgba(124,58,237,0.85);}
+#gbadge{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);z-index:10;
+  padding:10px 20px;background:rgba(0,0,0,0.72);border:1px solid rgba(255,255,255,0.14);
+  border-radius:999px;font-size:0.78rem;font-weight:600;color:rgba(255,255,255,0.8);
+  pointer-events:none;white-space:nowrap;transition:all 0.3s;}
+#gbadge.p{background:rgba(124,58,237,0.28);border-color:rgba(124,58,237,0.6);color:#a78bfa;box-shadow:0 0 20px rgba(124,58,237,0.3);}
+#ph-overlay{position:absolute;inset:0;pointer-events:none;z-index:5;}
+
+/* COMPLETE */
+#complete-screen{
+  gap:18px;z-index:50;
+  background:radial-gradient(ellipse at 50% 30%,rgba(16,185,129,0.18) 0,transparent 65%),var(--bg);
+}
+#confetti-canvas{position:absolute;inset:0;pointer-events:none;}
+.c-emoji{font-size:4rem;line-height:1;}
+.c-title{font-size:2.2rem;font-weight:800;text-align:center;
+  background:linear-gradient(135deg,var(--green),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+#preview-img{width:190px;height:190px;border-radius:16px;object-fit:cover;
+  border:3px solid rgba(16,185,129,0.45);box-shadow:0 0 44px rgba(16,185,129,0.25);}
+.c-stats{display:flex;gap:16px;}
+.cst{text-align:center;padding:14px 22px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:14px;}
+.cst-l{font-size:0.68rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:0.1em;}
+.cst-v{font-size:1.55rem;font-weight:700;color:var(--green);margin-top:4px;}
+
+/* LOADING */
+#loading{position:absolute;inset:0;background:rgba(8,12,20,0.92);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
+  z-index:300;opacity:0;pointer-events:none;transition:opacity 0.3s;}
+#loading.on{opacity:1;pointer-events:all;}
+.spin{width:48px;height:48px;border:3px solid rgba(124,58,237,0.2);border-top-color:var(--purple);
+  border-radius:50%;animation:sp 1s linear infinite;}
+@keyframes sp{to{transform:rotate(360deg);}}
+
+/* FLASH */
+#flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:400;transition:opacity 0.08s;}
+#flash.on{opacity:1;}
+
+/* Progress ring for countdown */
+.pring-wrap{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);pointer-events:none;}
+svg.pring{transform:rotate(-90deg);}
+.pring-bg{fill:none;stroke:rgba(255,255,255,0.15);stroke-width:4;}
+.pring-fg{fill:none;stroke:var(--purple);stroke-width:4;stroke-linecap:round;transition:stroke-dashoffset 1s linear;}
+</style>
+</head>
+<body>
+<div id="app"><div id="game">
+
+<!-- Loading -->
+<div id="loading"><div class="spin"></div><p style="font-size:0.82rem;color:var(--muted)">Loading AI Model…</p></div>
+<div id="flash"></div>
+
+<!-- START SCREEN -->
+<div class="screen active" id="start-screen">
+  <div class="s-icon">🤲</div>
+  <div class="s-title">Hand<br>Puzzle</div>
+  <p class="s-sub">Show both hands to capture a selfie, then solve the puzzle with a pinch gesture!</p>
+  <div class="steps-list">
+    <div class="step-row"><div class="sn">1</div>Show <strong>&nbsp;both hands&nbsp;</strong> — a 3-sec photo is taken</div>
+    <div class="step-row"><div class="sn">2</div>Tiles are scrambled — solve them in order</div>
+    <div class="step-row"><div class="sn">3</div><strong>Pinch</strong> thumb+index to grab &amp; drop tiles</div>
+  </div>
+  <button class="btn-primary" onclick="startGame()">🎮 Start Game</button>
+</div>
+
+<!-- CAPTURE SCREEN -->
+<div class="screen" id="capture-screen">
+  <video id="cap-video" autoplay playsinline muted></video>
+  <canvas id="hand-overlay"></canvas>
+  <div id="cap-ui">
+    <div class="cap-top"><h2>📸 CAPTURE MODE</h2></div>
+    <div class="cap-bot">
+      <div id="hand-prompt">Show both hands to the camera</div>
+      <div class="h-dots">
+        <div class="h-dot" id="dl" title="Hand 1"></div>
+        <div class="h-dot" id="dr" title="Hand 2"></div>
+      </div>
+      <div id="det-status">Waiting for hands…</div>
+    </div>
+  </div>
+  <div id="cd-overlay"><div id="cd-num">3</div></div>
+  <div class="pring-wrap" id="pring-wrap" style="display:none">
+    <svg class="pring" width="64" height="64" viewBox="0 0 64 64">
+      <circle class="pring-bg" cx="32" cy="32" r="28"/>
+      <circle class="pring-fg" id="pring-fg" cx="32" cy="32" r="28"
+        stroke-dasharray="175.9" stroke-dashoffset="0"/>
+    </svg>
+  </div>
+</div>
+
+<!-- PUZZLE SCREEN -->
+<div class="screen" id="puzzle-screen">
+  <div id="puz-header">
+    <h2>🧩 Solve It</h2>
+    <div id="puz-timer">0:00</div>
+  </div>
+  <div id="grid-wrap"></div>
+  <canvas id="ph-overlay"></canvas>
+  <div id="hcursor"></div>
+  <div id="gbadge">🤏 Pinch to grab a tile</div>
+</div>
+
+<!-- COMPLETE SCREEN -->
+<div class="screen" id="complete-screen">
+  <canvas id="confetti-canvas"></canvas>
+  <div class="c-emoji">🎉</div>
+  <div class="c-title">Puzzle<br>Completed!</div>
+  <img id="preview-img" alt="Your captured image"/>
+  <div class="c-stats">
+    <div class="cst"><div class="cst-l">Time</div><div class="cst-v" id="c-time">0:00</div></div>
+    <div class="cst"><div class="cst-l">Moves</div><div class="cst-v" id="c-moves">0</div></div>
+  </div>
+  <button class="btn-primary" onclick="playAgain()">🔄 Play Again</button>
+</div>
+
+</div></div>
+<script>
+/* ══════════════════════════════════════════════════════════
+   HandPuzzle  ·  Gesture Puzzle Game  ·  Single HTML File
+   ══════════════════════════════════════════════════════════ */
+
+// ── DOM ──────────────────────────────────────────────────────
+const $id = id => document.getElementById(id);
+const startScreen   = $id('start-screen');
+const captureScreen = $id('capture-screen');
+const puzzleScreen  = $id('puzzle-screen');
+const completeScreen= $id('complete-screen');
+const capVideo      = $id('cap-video');
+const handOvl       = $id('hand-overlay');
+const hCtx          = handOvl.getContext('2d');
+const phOvl         = $id('ph-overlay');
+const phCtx         = phOvl.getContext('2d');
+const gridWrap      = $id('grid-wrap');
+const hcursor       = $id('hcursor');
+const gbadge        = $id('gbadge');
+const loading       = $id('loading');
+const flash         = $id('flash');
+const cdOverlay     = $id('cd-overlay');
+const cdNum         = $id('cd-num');
+const dotL          = $id('dl');
+const dotR          = $id('dr');
+const detStatus     = $id('det-status');
+const timerEl       = $id('puz-timer');
+const confettiCv    = $id('confetti-canvas');
+const previewImg    = $id('preview-img');
+const cTimeEl       = $id('c-time');
+const cMovesEl      = $id('c-moves');
+
+// ── Constants ─────────────────────────────────────────────────
+const GRID = 3;
+const HAND_CONN = [
+  [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],
+  [5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],
+  [13,17],[17,18],[18,19],[19,20],[0,17]
+];
+
+// ── State ─────────────────────────────────────────────────────
+let phase         = 'start';
+let handsModel    = null;
+let camStream     = null;
+let hiddenVid     = null;
+let capturedUrl   = null;
+let tiles         = [];
+let slots         = [];
+let dragging      = null;
+let mouseG        = null;
+let touchG        = null;
+let moveCount     = 0;
+let timerSec      = 0;
+let timerInterval = null;
+let timerStarted  = false;
+let handLMs       = [];
+let countingDown  = false;
+let cdVal         = 3;
+let cdTimeout     = null;
+let pinchFrames   = 0;
+let wasPinch      = false;
+const PINCH_HOLD  = 12;
+
+// ── Confetti ──────────────────────────────────────────────────
+let confettiP = [];
+let confettiRaf = null;
+
+function startConfetti() {
+  const cv = confettiCv;
+  const g  = $id('game');
+  cv.width = g.clientWidth; cv.height = g.clientHeight;
+  const ctx = cv.getContext('2d');
+  const cols = ['#7c3aed','#06b6d4','#10b981','#ec4899','#facc15','#f97316','#a78bfa'];
+  confettiP = Array.from({length: 130}, () => ({
+    x: Math.random() * cv.width, y: -20 - Math.random() * 120,
+    s: 5 + Math.random() * 9, c: cols[Math.floor(Math.random() * cols.length)],
+    vy: 2.2 + Math.random() * 2.8, vx: (Math.random()-0.5)*1.8,
+    spin: Math.random()*Math.PI*2, ds: (Math.random()-0.5)*0.15
+  }));
+  function draw() {
+    ctx.clearRect(0,0,cv.width,cv.height);
+    confettiP.forEach(p => {
+      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.spin);
+      ctx.fillStyle = p.c;
+      ctx.fillRect(-p.s/2,-p.s/4,p.s,p.s/2);
+      ctx.restore();
+      p.y+=p.vy; p.x+=p.vx; p.spin+=p.ds;
+      if(p.y > cv.height+20){ p.y=-20; p.x=Math.random()*cv.width; }
+    });
+    if(phase==='complete') confettiRaf=requestAnimationFrame(draw);
+    else ctx.clearRect(0,0,cv.width,cv.height);
+  }
+  draw();
+}
+
+// ── Screen Switch ─────────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  const el = $id(id);
+  if(el) requestAnimationFrame(()=>el.classList.add('active'));
+}
+
+function showLoading(on) { loading.classList.toggle('on', on); }
+
+// ── MediaPipe Init ────────────────────────────────────────────
+function initMP() {
+  return new Promise((res,rej) => {
+    let n=0;
+    const iv = setInterval(()=>{
+      if(window.Hands){
+        clearInterval(iv);
+        handsModel = new window.Hands({
+          locateFile: f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${f}`
+        });
+        handsModel.setOptions({maxNumHands:2,modelComplexity:1,minDetectionConfidence:0.6,minTrackingConfidence:0.6});
+        handsModel.onResults(onResults);
+        res();
+      } else if(++n>80){ clearInterval(iv); rej(new Error('MP timeout')); }
+    },100);
+  });
+}
+
+// ── Hand Results ──────────────────────────────────────────────
+function onResults(res) {
+  handLMs = res.multiHandLandmarks || [];
+  if(phase==='capture') handleCaptureHands(res);
+  else if(phase==='play') handlePlayHands(res);
+}
+
+// ── Start Game ────────────────────────────────────────────────
+async function startGame() {
+  showLoading(true);
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video:{width:{ideal:640},height:{ideal:480},facingMode:'user'}, audio:false
+    });
+    capVideo.srcObject = camStream;
+    await capVideo.play().catch(()=>{});
+    await initMP();
+    showLoading(false);
+    phase = 'capture';
+    showScreen('capture-screen');
+    syncCanvas(handOvl, capVideo);
+    trackLoop(capVideo);
+  } catch(e) {
+    showLoading(false);
+    alert('Error: '+e.message);
+  }
+}
+
+// ── Tracking Loop ─────────────────────────────────────────────
+let trackRAF = null;
+let trackVid = null;
+let lastSend = 0;
+
+function trackLoop(vid) {
+  trackVid = vid;
+  async function loop(){
+    trackRAF = requestAnimationFrame(loop);
+    const now = performance.now();
+    if(now - lastSend < 33) return;
+    lastSend = now;
+    if(trackVid && trackVid.readyState>=2){
+      try{ await handsModel.send({image:trackVid}); }catch(e){}
+    }
+  }
+  loop();
+}
+
+// ── Capture Phase ─────────────────────────────────────────────
+function handleCaptureHands(res) {
+  const count = handLMs.length;
+  syncCanvas(handOvl, capVideo);
+  hCtx.clearRect(0,0,handOvl.width,handOvl.height);
+  handLMs.forEach(lm => drawSkeleton(hCtx, lm, handOvl.width, handOvl.height));
+  dotL.classList.toggle('on', count>=1);
+  dotR.classList.toggle('on', count>=2);
+  if(count>=2){
+    detStatus.textContent='✅ Both hands! Capturing soon…';
+    if(!countingDown) beginCountdown();
+  } else {
+    detStatus.textContent=`${count}/2 hands — show both hands!`;
+    if(countingDown) cancelCountdown();
+  }
+}
+
+function beginCountdown() {
+  countingDown=true; cdVal=3;
+  cdNum.textContent='3'; cdNum.style.animation='none';
+  void cdNum.offsetHeight; cdNum.style.animation='cdPop 1s ease-out both';
+  cdOverlay.classList.add('show');
+  function tick(){
+    cdVal--;
+    if(cdVal<=0){
+      cdOverlay.classList.remove('show');
+      countingDown=false;
+      doCapture();
+    } else {
+      cdNum.style.animation='none'; void cdNum.offsetHeight;
+      cdNum.style.animation='cdPop 1s ease-out both';
+      cdNum.textContent=cdVal;
+      cdTimeout=setTimeout(tick,1000);
+    }
+  }
+  cdTimeout=setTimeout(tick,1000);
+}
+
+function cancelCountdown(){
+  countingDown=false;
+  clearTimeout(cdTimeout);
+  cdOverlay.classList.remove('show');
+}
+
+// ── Capture Photo ─────────────────────────────────────────────
+function doCapture(){
+  flash.classList.add('on');
+  setTimeout(()=>flash.classList.remove('on'),180);
+  const w=capVideo.videoWidth||640, h=capVideo.videoHeight||480;
+  const tmp=document.createElement('canvas');
+  tmp.width=w; tmp.height=h;
+  const tc=tmp.getContext('2d');
+  tc.translate(w,0); tc.scale(-1,1);
+  tc.drawImage(capVideo,0,0,w,h);
+  capturedUrl=tmp.toDataURL('image/jpeg',0.9);
+  previewImg.src=capturedUrl;
+  cancelAnimationFrame(trackRAF);
+  camStream.getTracks().forEach(t=>t.stop());
+  setTimeout(()=>buildPuzzle(),300);
+}
+
+// ── Build Puzzle ──────────────────────────────────────────────
+async function buildPuzzle(){
+  phase='play';
+  showScreen('puzzle-screen');
+  gridWrap.innerHTML=''; tiles=[]; slots=[];
+  moveCount=0; timerSec=0; timerStarted=false;
+  clearInterval(timerInterval);
+  timerEl.textContent='0:00';
+
+  const game=$id('game');
+  const pad=18, gw=Math.min(game.clientWidth-pad*2,420);
+  const ts=Math.floor(gw/GRID), ag=ts*GRID;
+  gridWrap.style.width=ag+'px'; gridWrap.style.height=ag+'px';
+
+  for(let i=0;i<GRID*GRID;i++){
+    const c=i%GRID, r=Math.floor(i/GRID);
+    const el=document.createElement('div');
+    el.className='gslot';
+    el.style.cssText=`width:${ts}px;height:${ts}px;left:${c*ts}px;top:${r*ts}px;`;
+    el.dataset.s=i; gridWrap.appendChild(el);
+    slots.push({el,c,r});
+  }
+
+  const img=new Image();
+  img.src=capturedUrl;
+  await new Promise(resolve=>{ img.onload=resolve; img.onerror=resolve; });
+
+  for(let i=0;i<GRID*GRID;i++){
+    const c=i%GRID, r=Math.floor(i/GRID);
+    const el=document.createElement('div');
+    el.className='tile';
+    el.style.cssText=`width:${ts}px;height:${ts}px;`+
+      `background-image:url(${capturedUrl});`+
+      `background-size:${ag}px ${ag}px;`+
+      `background-position:${-c*ts}px ${-r*ts}px;`+
+      `left:${c*ts}px;top:${r*ts}px;`;
+    el.dataset.id=i;
+    el.addEventListener('mousedown',e=>beginMouseDrag(e,i));
+    el.addEventListener('touchstart',e=>beginTouchDrag(e,i),{passive:false});
+    gridWrap.appendChild(el);
+    tiles.push({id:i,el,slot:i,locked:false});
+  }
+
+  setTimeout(()=>shuffleAndStart(ts),350);
+
+  // Puzzle camera
+  try{
+    const s2=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:640},height:{ideal:480},facingMode:'user'},audio:false});
+    camStream=s2;
+    hiddenVid=document.createElement('video');
+    hiddenVid.style.display='none'; hiddenVid.autoplay=true; hiddenVid.playsInline=true; hiddenVid.muted=true;
+    hiddenVid.srcObject=s2; document.body.appendChild(hiddenVid);
+    await hiddenVid.play().catch(()=>{});
+    trackLoop(hiddenVid);
+  }catch(e){ console.warn('Puzzle cam err:',e); }
+}
+
+// ── Shuffle ───────────────────────────────────────────────────
+function shuffleAndStart(ts){
+  const order=Array.from({length:GRID*GRID},(_,i)=>i);
+  for(let i=order.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [order[i],order[j]]=[order[j],order[i]]; }
+  tiles.forEach((tile,idx)=>{
+    tile.el.classList.add('sfl');
+    setTimeout(()=>{
+      const ns=order[idx]; tile.slot=ns;
+      const c=ns%GRID, r=Math.floor(ns/GRID);
+      tile.el.style.left=c*ts+'px'; tile.el.style.top=r*ts+'px';
+    }, idx*45);
+  });
+  setTimeout(()=>{
+    tiles.forEach(t=>t.el.classList.remove('sfl'));
+    startTimer();
+    gbadge.textContent='🤏 Pinch to grab a tile';
+  }, tiles.length*45+700);
+}
+
+// ── Timer ─────────────────────────────────────────────────────
+function startTimer(){
+  timerStarted=true;
+  timerInterval=setInterval(()=>{
+    timerSec++;
+    timerEl.textContent=fmt(timerSec);
+  },1000);
+}
+function fmt(s){ return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; }
+
+// ── Play Phase Hand Processing ─────────────────────────────────
+function handlePlayHands(res){
+  const lm=handLMs.length>0?handLMs[0]:null;
+  const game=$id('game');
+  const pr=game.getBoundingClientRect();
+  syncCanvas2(phOvl,pr.width,pr.height);
+  phCtx.clearRect(0,0,phOvl.width,phOvl.height);
+  if(!lm){ hcursor.style.display='none'; return; }
+
+  drawSkeleton(phCtx,lm,phOvl.width,phOvl.height);
+
+  const nx=1-lm[8].x, ny=lm[8].y;
+  const tnx=1-lm[4].x, tny=lm[4].y;
+  const sx=pr.left+nx*pr.width, sy=pr.top+ny*pr.height;
+  const tx=pr.left+tnx*pr.width, ty=pr.top+tny*pr.height;
+  const pd=Math.hypot(sx-tx,sy-ty);
+  const isPinch=pd<Math.min(44,pr.width*0.11);
+
+  hcursor.style.display='block';
+  hcursor.style.left=(nx*pr.width)+'px';
+  hcursor.style.top=(ny*pr.height)+'px';
+  hcursor.classList.toggle('pinch',isPinch);
+
+  if(isPinch){
+    pinchFrames++;
+    gbadge.className='p';
+    if(pinchFrames===PINCH_HOLD && !dragging){
+      const t=tileAtScreen(sx,sy);
+      if(t && !t.locked) startHandDrag(t,sx,sy);
+    } else if(dragging){
+      moveHandDrag(sx,sy);
+    }
+    gbadge.textContent=dragging?'🤏 Release to drop':`🤏 Hold… (${Math.min(pinchFrames,PINCH_HOLD)}/${PINCH_HOLD})`;
+  } else {
+    if(dragging) endHandDrag();
+    pinchFrames=0;
+    gbadge.className='';
+    if(!dragging) gbadge.textContent=wasPinch?'✅ Dropped!':'🤏 Pinch to grab a tile';
+  }
+  wasPinch=isPinch;
+}
+
+function tileAtScreen(sx,sy){
+  const r=gridWrap.getBoundingClientRect();
+  const lx=sx-r.left, ly=sy-r.top;
+  const ts=parseInt(tiles[0]?.el.style.width||90);
+  const slot=Math.floor(ly/ts)*GRID+Math.floor(lx/ts);
+  if(slot<0||slot>=GRID*GRID) return null;
+  return tiles.find(t=>t.slot===slot&&!t.locked)||null;
+}
+
+function startHandDrag(tile,sx,sy){
+  dragging={tile,startSlot:tile.slot};
+  tile.el.classList.add('drag');
+  tile.el.style.zIndex=100;
+  tile.el.style.transition='none';
+}
+
+function moveHandDrag(sx,sy){
+  if(!dragging) return;
+  const r=gridWrap.getBoundingClientRect();
+  const ts=parseInt(dragging.tile.el.style.width);
+  dragging.tile.el.style.left=(sx-r.left-ts/2)+'px';
+  dragging.tile.el.style.top=(sy-r.top-ts/2)+'px';
+  const ns=nearestSlot(sx,sy);
+  const occupied=tiles.some(t=>t.slot===ns&&!t.locked&&t!==dragging.tile);
+  slots.forEach((s,i)=>s.el.classList.toggle('hl',i===ns&&!occupied));
+}
+
+function endHandDrag(){
+  if(!dragging) return;
+  const tile=dragging.tile;
+  const ts=parseInt(tile.el.style.width);
+  const r=gridWrap.getBoundingClientRect();
+  const tileR=tile.el.getBoundingClientRect();
+  const cx=tileR.left+ts/2, cy=tileR.top+ts/2;
+  const ns=nearestSlot(cx,cy);
+  snapTo(tile,ns,ts);
+  dragging=null;
+  slots.forEach(s=>s.el.classList.remove('hl'));
+}
+
+// ── Mouse / Touch (fallback) ───────────────────────────────────
+function beginMouseDrag(e,tid){
+  if(phase!=='play') return; e.preventDefault();
+  const tile=tiles.find(t=>t.id===tid); if(!tile||tile.locked) return;
+  const tr=tile.el.getBoundingClientRect(), gr=gridWrap.getBoundingClientRect();
+  const ts=parseInt(tile.el.style.width);
+  mouseG={tile,ox:e.clientX-tr.left,oy:e.clientY-tr.top};
+  tile.el.classList.add('drag'); tile.el.style.zIndex=100; tile.el.style.transition='none';
+  document.addEventListener('mousemove',onMouseMove);
+  document.addEventListener('mouseup',onMouseUp,{once:true});
+}
+function onMouseMove(e){
+  if(!mouseG) return;
+  const gr=gridWrap.getBoundingClientRect(); const ts=parseInt(mouseG.tile.el.style.width);
+  mouseG.tile.el.style.left=(e.clientX-gr.left-mouseG.ox)+'px';
+  mouseG.tile.el.style.top=(e.clientY-gr.top-mouseG.oy)+'px';
+  const ns=nearestSlot(e.clientX,e.clientY);
+  slots.forEach((s,i)=>s.el.classList.toggle('hl',i===ns));
+}
+function onMouseUp(e){
+  document.removeEventListener('mousemove',onMouseMove);
+  if(!mouseG) return;
+  const tile=mouseG.tile; const ts=parseInt(tile.el.style.width);
+  const tr=tile.el.getBoundingClientRect(); const cx=tr.left+ts/2, cy=tr.top+ts/2;
+  snapTo(tile,nearestSlot(cx,cy),ts);
+  slots.forEach(s=>s.el.classList.remove('hl'));
+  mouseG=null;
+}
+
+function beginTouchDrag(e,tid){
+  if(phase!=='play') return; e.preventDefault();
+  const tile=tiles.find(t=>t.id===tid); if(!tile||tile.locked) return;
+  const t=e.touches[0]; const ts=parseInt(tile.el.style.width);
+  touchG={tile,tid:t.identifier,ox:ts/2,oy:ts/2};
+  tile.el.classList.add('drag'); tile.el.style.zIndex=100; tile.el.style.transition='none';
+  document.addEventListener('touchmove',onTouchMove,{passive:false});
+  document.addEventListener('touchend',onTouchEnd,{once:true});
+}
+function onTouchMove(e){ e.preventDefault();
+  if(!touchG) return;
+  const t=Array.from(e.touches).find(x=>x.identifier===touchG.tid)||e.touches[0];
+  const gr=gridWrap.getBoundingClientRect(); const ts=parseInt(touchG.tile.el.style.width);
+  touchG.tile.el.style.left=(t.clientX-gr.left-touchG.ox)+'px';
+  touchG.tile.el.style.top=(t.clientY-gr.top-touchG.oy)+'px';
+  const ns=nearestSlot(t.clientX,t.clientY);
+  slots.forEach((s,i)=>s.el.classList.toggle('hl',i===ns));
+}
+function onTouchEnd(e){
+  document.removeEventListener('touchmove',onTouchMove);
+  if(!touchG) return;
+  const t=e.changedTouches[0]; const tile=touchG.tile; const ts=parseInt(tile.el.style.width);
+  const tr=tile.el.getBoundingClientRect(); const cx=tr.left+ts/2, cy=tr.top+ts/2;
+  snapTo(tile,nearestSlot(cx,cy),ts);
+  slots.forEach(s=>s.el.classList.remove('hl'));
+  touchG=null;
+}
+
+// ── Snap to Slot ──────────────────────────────────────────────
+function snapTo(tile,ns,ts){
+  const occ=tiles.find(t=>t.slot===ns&&t!==tile&&!t.locked);
+  if(occ){
+    const prev=tile.slot;
+    occ.slot=prev;
+    occ.el.style.transition='left 0.3s,top 0.3s';
+    occ.el.style.left=(prev%GRID*ts)+'px'; occ.el.style.top=(Math.floor(prev/GRID)*ts)+'px';
+    setTimeout(()=>occ.el.style.transition='',350);
+  }
+  tile.slot=ns;
+  tile.el.style.transition='left 0.3s,top 0.3s';
+  tile.el.style.left=(ns%GRID*ts)+'px'; tile.el.style.top=(Math.floor(ns/GRID)*ts)+'px';
+  tile.el.style.zIndex=1; tile.el.classList.remove('drag');
+  setTimeout(()=>tile.el.style.transition='',350);
+  if(tile.slot===tile.id){
+    setTimeout(()=>{ tile.locked=true; tile.el.classList.add('locked'); slots[tile.id].el.classList.add('ok'); },200);
+  }
+  moveCount++;
+  setTimeout(checkWin,450);
+}
+
+function nearestSlot(sx,sy){
+  const gr=gridWrap.getBoundingClientRect();
+  const ts=parseInt(tiles[0]?.el.style.width||90);
+  const col=Math.max(0,Math.min(GRID-1,Math.round((sx-gr.left)/ts-0.5)));
+  const row=Math.max(0,Math.min(GRID-1,Math.round((sy-gr.top)/ts-0.5)));
+  return Math.max(0,Math.min(GRID*GRID-1,row*GRID+col));
+}
+
+// ── Win Check ─────────────────────────────────────────────────
+function checkWin(){
+  if(phase!=='play') return;
+  if(tiles.every(t=>t.slot===t.id)){
+    clearInterval(timerInterval);
+    const elapsed=timerSec;
+    phase='complete';
+    cTimeEl.textContent=fmt(elapsed); cMovesEl.textContent=moveCount;
+    cancelAnimationFrame(trackRAF);
+    if(camStream) camStream.getTracks().forEach(t=>t.stop());
+    if(hiddenVid){ hiddenVid.remove(); hiddenVid=null; }
+    setTimeout(()=>{ showScreen('complete-screen'); startConfetti(); },400);
+  }
+}
+
+// ── Hand Skeleton Drawing ─────────────────────────────────────
+function drawSkeleton(ctx2d,lm,W,H){
+  ctx2d.strokeStyle='rgba(255,255,255,0.72)'; ctx2d.lineWidth=2;
+  HAND_CONN.forEach(([a,b])=>{
+    const pa={x:(1-lm[a].x)*W,y:lm[a].y*H}, pb={x:(1-lm[b].x)*W,y:lm[b].y*H};
+    ctx2d.beginPath(); ctx2d.moveTo(pa.x,pa.y); ctx2d.lineTo(pb.x,pb.y); ctx2d.stroke();
+  });
+  lm.forEach((l,i)=>{
+    const p={x:(1-l.x)*W,y:l.y*H}, isKey=i===4||i===8;
+    ctx2d.beginPath(); ctx2d.arc(p.x,p.y,isKey?7:4,0,Math.PI*2);
+    ctx2d.fillStyle=isKey?'#a78bfa':'rgba(255,255,255,0.85)';
+    if(isKey){ctx2d.shadowBlur=14;ctx2d.shadowColor='#7c3aed';}
+    ctx2d.fill(); ctx2d.shadowBlur=0;
+  });
+  // pinch distance line
+  const tp={x:(1-lm[4].x)*W,y:lm[4].y*H}, ip={x:(1-lm[8].x)*W,y:lm[8].y*H};
+  const d=Math.hypot(tp.x-ip.x,tp.y-ip.y);
+  ctx2d.strokeStyle=d<W*0.08?'rgba(236,72,153,0.9)':'rgba(255,255,255,0.3)';
+  ctx2d.lineWidth=d<W*0.08?3:1.5; ctx2d.setLineDash([5,4]);
+  ctx2d.beginPath(); ctx2d.moveTo(tp.x,tp.y); ctx2d.lineTo(ip.x,ip.y); ctx2d.stroke();
+  ctx2d.setLineDash([]);
+}
+
+// ── Helpers ───────────────────────────────────────────────────
+function syncCanvas(cv,vid){
+  const w=vid.videoWidth||vid.clientWidth||640, h=vid.videoHeight||vid.clientHeight||480;
+  cv.width=w; cv.height=h;
+  Object.assign(cv.style,{position:'absolute',inset:0,width:'100%',height:'100%',pointerEvents:'none'});
+}
+function syncCanvas2(cv,w,h){ if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h;} }
+
+// ── Play Again ────────────────────────────────────────────────
+function playAgain(){
+  cancelAnimationFrame(confettiRaf);
+  cancelAnimationFrame(trackRAF);
+  clearInterval(timerInterval);
+  clearTimeout(cdTimeout);
+  if(camStream){camStream.getTracks().forEach(t=>t.stop());camStream=null;}
+  if(hiddenVid){hiddenVid.remove();hiddenVid=null;}
+  confettiCv.getContext('2d').clearRect(0,0,confettiCv.width,confettiCv.height);
+  tiles=[]; slots=[]; dragging=null; mouseG=null; touchG=null;
+  moveCount=0; timerSec=0; countingDown=false; pinchFrames=0; wasPinch=false;
+  phase='start';
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  $id('start-screen').classList.add('active');
+}
+</script>
+</body></html>
