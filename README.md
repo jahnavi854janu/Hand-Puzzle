@@ -57,22 +57,19 @@ No buttons required.
 
 ✔ Augmented Reality Gameplay
 
-✔ Gesture-Based Image Capture
-
 ✔ Real-Time Puzzle Generation
-
-✔ Interactive Pinch-and-Drag Controls
 
 ✔ Three Difficulty Levels
 
 ✔ Score & Star Rating
 
-✔ Confetti Celebration
-
 ✔ Browser-Based
 
-✔ No External Hardware Required
-
 ---
+## 🚀 Live Demo
 
-> **Hand Puzzle** demonstrates how modern browser technologies, AI-powered hand tracking, and augmented reality can be combined to create an engaging, touchless gaming experience entirely on the web.
+Wanna try it???  
+
+Here's the URL
+
+"https://jahnavi854janu.github.io/Hand-Puzzle/"
